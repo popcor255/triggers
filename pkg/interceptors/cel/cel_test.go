@@ -1,3 +1,19 @@
+/*
+Copyright 2019 The Tekton Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+		http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package cel
 
 import (
@@ -5,16 +21,24 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"reflect"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/go-cmp/cmp"
 	"github.com/tektoncd/pipeline/pkg/logging"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fakekubeclient "knative.dev/pkg/client/injection/kube/client/fake"
+	rtesting "knative.dev/pkg/reconciler/testing"
+
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 )
+
+const testNS = "testing-ns"
 
 func TestInterceptor_ExecuteTrigger(t *testing.T) {
 	tests := []struct {
@@ -78,27 +102,28 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 			name: "single overlay with no filter",
 			CEL: &triggersv1.CELInterceptor{
 				Overlays: []triggersv1.CELOverlay{
-					{Key: "new", Expression: "split(body.ref, '/')[2]"},
+					{Key: "new", Expression: "body.ref.split('/')[2]"},
 				},
 			},
-			payload: ioutil.NopCloser(bytes.NewBufferString(`{"ref":"refs/head/master"}`)),
-			want:    []byte(`{"new":"master","ref":"refs/head/master"}`),
+			payload: ioutil.NopCloser(bytes.NewBufferString(`{"ref":"refs/head/master","name":"testing"}`)),
+			want:    []byte(`{"new":"master","ref":"refs/head/master","name":"testing"}`),
+		},
+		{
+			name: "overlay with string library functions",
+			CEL: &triggersv1.CELInterceptor{
+				Overlays: []triggersv1.CELOverlay{
+					{Key: "new", Expression: "body.ref.split('/')[2]"},
+					{Key: "replaced", Expression: "body.name.replace('ing','ed',0)"},
+				},
+			},
+			payload: ioutil.NopCloser(bytes.NewBufferString(`{"ref":"refs/head/master","name":"testing"}`)),
+			want:    []byte(`{"replaced":"testing","new":"master","ref":"refs/head/master","name":"testing"}`),
 		},
 		{
 			name: "update with base64 decoding",
 			CEL: &triggersv1.CELInterceptor{
 				Overlays: []triggersv1.CELOverlay{
-					{Key: "value", Expression: "decodeb64(body.value)"},
-				},
-			},
-			payload: ioutil.NopCloser(bytes.NewBufferString(`{"value":"eyJ0ZXN0IjoiZGVjb2RlIn0="}`)),
-			want:    []byte(`{"value":{"test":"decode"}}`),
-		},
-		{
-			name: "update with base64 decoding",
-			CEL: &triggersv1.CELInterceptor{
-				Overlays: []triggersv1.CELOverlay{
-					{Key: "value", Expression: "decodeb64(body.value)"},
+					{Key: "value", Expression: "body.value.decodeb64()"},
 				},
 			},
 			payload: ioutil.NopCloser(bytes.NewBufferString(`{"value":"eyJ0ZXN0IjoiZGVjb2RlIn0="}`)),
@@ -135,33 +160,52 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 			payload: ioutil.NopCloser(bytes.NewBufferString(`{"count":1,"measure":1.7}`)),
 			want:    []byte(`{"val4":5.1,"val3":4.5,"val2":4,"val1":2,"count":1,"measure":1.7}`),
 		},
+		{
+			name: "validating a secret",
+			CEL: &triggersv1.CELInterceptor{
+				Filter: "header.canonical('X-Secret-Token').compareSecret('token', 'test-secret', 'testing-ns')",
+			},
+			payload: ioutil.NopCloser(bytes.NewBufferString(`{"count":1,"measure":1.7}`)),
+			want:    []byte(`{"count":1,"measure":1.7}`),
+		},
+		{
+			name: "validating a secret in the default namespace",
+			CEL: &triggersv1.CELInterceptor{
+				Filter: "header.canonical('X-Secret-Token').compareSecret('token', 'test-secret')",
+			},
+			payload: ioutil.NopCloser(bytes.NewBufferString(`{"count":1,"measure":1.7}`)),
+			want:    []byte(`{"count":1,"measure":1.7}`),
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(rt *testing.T) {
 			logger, _ := logging.NewLogger("", "")
-			w := &Interceptor{
-				CEL:    tt.CEL,
-				Logger: logger,
+			ctx, _ := rtesting.SetupFakeContext(t)
+			kubeClient := fakekubeclient.Get(ctx)
+			if _, err := kubeClient.CoreV1().Secrets(testNS).Create(makeSecret()); err != nil {
+				rt.Error(err)
 			}
+			w := NewInterceptor(tt.CEL, kubeClient, "testing-ns", logger)
 			request := &http.Request{
 				Body: tt.payload,
 				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-					"X-Test":       []string{"test-value"},
+					"Content-Type":   []string{"application/json"},
+					"X-Test":         []string{"test-value"},
+					"X-Secret-Token": []string{"secrettoken"},
 				},
 			}
 			resp, err := w.ExecuteTrigger(request)
 			if err != nil {
-				t.Errorf("Interceptor.ExecuteTrigger() error = %v", err)
+				rt.Errorf("Interceptor.ExecuteTrigger() error = %v", err)
 				return
 			}
 			got, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				t.Fatalf("error reading response body: %v", err)
+				rt.Fatalf("error reading response body: %v", err)
 			}
 			defer resp.Body.Close()
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Interceptor.ExecuteTrigger() = %s, want %s", got, tt.want)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("Interceptor.ExecuteTrigger (-want, +got) = %s", diff)
 			}
 		})
 	}
@@ -253,6 +297,7 @@ func TestInterceptor_ExecuteTrigger_Errors(t *testing.T) {
 }
 
 func TestExpressionEvaluation(t *testing.T) {
+	reg := types.NewRegistry()
 	testSHA := "ec26c3e57ca3a959ca5aad62de7213c562f8c821"
 	testRef := "refs/heads/master"
 	jsonMap := map[string]interface{}{
@@ -262,20 +307,21 @@ func TestExpressionEvaluation(t *testing.T) {
 		"pull_request": map[string]interface{}{
 			"commits": 2,
 		},
-		"b64value": "ZXhhbXBsZQ==",
+		"b64value":  "ZXhhbXBsZQ==",
+		"json_body": `{"testing": "value"}`,
+		"testURL":   "https://user:password@site.example.com/path/to?query=search#first",
+		"multiURL":  "https://user:password@site.example.com/path/to?query=search&query=results",
 	}
+
 	refParts := strings.Split(testRef, "/")
 	header := http.Header{}
 	header.Add("X-Test-Header", "value")
 	evalEnv := map[string]interface{}{"body": jsonMap, "header": header}
-	env, err := makeCelEnv()
-	if err != nil {
-		t.Fatal(err)
-	}
 	tests := []struct {
-		name string
-		expr string
-		want ref.Val
+		name   string
+		expr   string
+		secret *corev1.Secret
+		want   ref.Val
 	}{
 		{
 			name: "simple body value",
@@ -289,23 +335,33 @@ func TestExpressionEvaluation(t *testing.T) {
 		},
 		{
 			name: "truncate a long string",
-			expr: "truncate(body.sha, 7)",
+			expr: "body.sha.truncate(7)",
 			want: types.String("ec26c3e"),
 		},
 		{
+			name: "truncate a string to its own length",
+			expr: "body.value.truncate(7)",
+			want: types.String("testing"),
+		},
+		{
 			name: "truncate a string to fewer characters than it has",
-			expr: "truncate(body.sha, 45)",
+			expr: "body.sha.truncate(45)",
 			want: types.String(testSHA),
 		},
 		{
 			name: "split a string on a character",
-			expr: "split(body.ref, '/')",
+			expr: "body.ref.split('/')",
 			want: types.NewStringList(types.NewRegistry(), refParts),
 		},
 		{
 			name: "extract a branch from a non refs string",
-			expr: "split(body.value, '/')",
+			expr: "body.value.split('/')",
 			want: types.NewStringList(types.NewRegistry(), []string{"testing"}),
+		},
+		{
+			name: "combine split and truncate",
+			expr: "body.value.split('/')[0].truncate(2)",
+			want: types.String("te"),
 		},
 		{
 			name: "exact header lookup",
@@ -319,7 +375,7 @@ func TestExpressionEvaluation(t *testing.T) {
 		},
 		{
 			name: "decode a base64 value",
-			expr: "decodeb64(body.b64value)",
+			expr: "body.b64value.decodeb64()",
 			want: types.Bytes("example"),
 		},
 		{
@@ -327,22 +383,72 @@ func TestExpressionEvaluation(t *testing.T) {
 			expr: "body.pull_request.commits + 1",
 			want: types.Int(3),
 		},
+		{
+			name:   "compare string against secret",
+			expr:   "'secrettoken'.compareSecret('token', 'test-secret', 'testing-ns') ",
+			want:   types.Bool(true),
+			secret: makeSecret(),
+		},
+		{
+			name:   "compare string against secret with no match",
+			expr:   "'nomatch'.compareSecret('token', 'test-secret', 'testing-ns') ",
+			want:   types.Bool(false),
+			secret: makeSecret(),
+		},
+		{
+			name:   "compare string against secret in the default namespace",
+			expr:   "'secrettoken'.compareSecret('token', 'test-secret') ",
+			want:   types.Bool(true),
+			secret: makeSecret(),
+		},
+		{
+			name: "parse JSON body in a string",
+			expr: "body.json_body.parseJSON().testing == 'value'",
+			want: types.Bool(true),
+		},
+		{
+			name: "parse URL",
+			expr: "body.testURL.parseURL().path == '/path/to'",
+			want: types.Bool(true),
+		},
+		{
+			name: "parse URL and extract single string",
+			expr: "body.testURL.parseURL().query['query'] == 'search'",
+			want: types.Bool(true),
+		},
+		{
+			name: "parse URL and extract multiple strings",
+			expr: "body.multiURL.parseURL().queryStrings['query']",
+			want: types.NewStringList(reg, []string{"search", "results"}),
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(rt *testing.T) {
+			ctx, _ := rtesting.SetupFakeContext(rt)
+			kubeClient := fakekubeclient.Get(ctx)
+			if tt.secret != nil {
+				if _, err := kubeClient.CoreV1().Secrets(tt.secret.ObjectMeta.Namespace).Create(tt.secret); err != nil {
+					rt.Error(err)
+				}
+			}
+			env, err := makeCelEnv(testNS, kubeClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			got, err := evaluate(tt.expr, env, evalEnv)
 			if err != nil {
-				t.Errorf("evaluate() got an error %s", err)
+				rt.Errorf("evaluate() got an error %s", err)
 				return
 			}
 			_, ok := got.(*types.Err)
 			if ok {
-				t.Errorf("error evaluating expression: %s", got)
+				rt.Errorf("error evaluating expression: %s", got)
 				return
 			}
 
 			if !got.Equal(tt.want).(types.Bool) {
-				t.Errorf("evaluate() = %s, want %s", got, tt.want)
+				rt.Errorf("evaluate() = %s, want %s", got, tt.want)
 			}
 		})
 	}
@@ -359,14 +465,11 @@ func TestExpressionEvaluation_Error(t *testing.T) {
 	}
 	header := http.Header{}
 	evalEnv := map[string]interface{}{"body": jsonMap, "header": header}
-	env, err := makeCelEnv()
-	if err != nil {
-		t.Fatal(err)
-	}
 	tests := []struct {
-		name string
-		expr string
-		want string
+		name     string
+		expr     string
+		secretNS string
+		want     string
 	}{
 		{
 			name: "unknown value",
@@ -389,34 +492,88 @@ func TestExpressionEvaluation_Error(t *testing.T) {
 			want: "failed to convert to http.Header",
 		},
 		{
-			name: "non-string passed to split",
-			expr: "split(body.value, 54)",
-			want: "found no matching overload for 'split'",
-		},
-		{
 			name: "invalid function overloading with canonical",
 			expr: "body.canonical('testing')",
 			want: "failed to convert to http.Header",
 		},
 		{
-			name: "invalid function overloading canonical with non-string",
-			expr: "body.canonical(52)",
-			want: "found no matching overload",
+			name: "invalid base64 decoding",
+			expr: "\"AA=A\".decodeb64()",
+			want: "failed to decode 'AA=A' in decodeB64.*illegal base64 data",
 		},
 		{
-			name: "invalid base64 decoding",
-			expr: "decodeb64(\"AA=A\")",
-			want: "failed to decode 'AA=A' in decodeB64.*illegal base64 data",
+			name: "missing secret",
+			expr: "'testing'.compareSecret('testing', 'testSecret', 'mytoken')",
+			want: "failed to find secret.*testing.*",
+		},
+		{
+			name:     "secret not in default ns",
+			expr:     "'testing'.compareSecret('testSecret', 'mytoken')",
+			secretNS: "another-ns",
+			want:     "failed to find secret.*another-ns.*",
+		},
+		{
+			name: "invalid parseJSON body",
+			expr: "body.value.parseJSON().test == 'test'",
+			want: "invalid character 'e' in literal",
+		},
+		{
+			name: "base64 decoding non-string",
+			expr: "body.pull_request.decodeb64()",
+			want: "unexpected type 'map' passed to decodeB64",
+		},
+		{
+			name: "parseJSON decoding non-string",
+			expr: "body.pull_request.parseJSON().test == 'test'",
+			want: "unexpected type 'map' passed to parseJSON",
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := evaluate(tt.expr, env, evalEnv)
+		t.Run(tt.name, func(rt *testing.T) {
+			ctx, _ := rtesting.SetupFakeContext(t)
+			kubeClient := fakekubeclient.Get(ctx)
+			ns := testNS
+			if tt.secretNS != "" {
+				secret := makeSecret()
+				if _, err := kubeClient.CoreV1().Secrets(secret.ObjectMeta.Namespace).Create(secret); err != nil {
+					rt.Error(err)
+				}
+				ns = tt.secretNS
+			}
+			env, err := makeCelEnv(ns, kubeClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = evaluate(tt.expr, env, evalEnv)
 			if !matchError(t, tt.want, err) {
-				t.Errorf("evaluate() got %s, wanted %s", err, tt.want)
-				return
+				rt.Errorf("evaluate() got %s, wanted %s", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestURLToMap(t *testing.T) {
+	u, err := url.Parse("https://user:testing@example.com/search?q=dotnet#first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := urlToMap(u)
+	want := map[string]interface{}{
+		"scheme": "https",
+		"auth": map[string]string{
+			"username": "user",
+			"password": "testing",
+		},
+		"host":         "example.com",
+		"path":         "/search",
+		"rawQuery":     "q=dotnet",
+		"fragment":     "first",
+		"query":        map[string]string{"q": "dotnet"},
+		"queryStrings": url.Values{"q": {"dotnet"}},
+	}
+
+	if diff := cmp.Diff(want, m); diff != "" {
+		t.Fatalf("urlToMap failed:\n%s", diff)
 	}
 }
 
@@ -427,4 +584,16 @@ func matchError(t *testing.T, s string, e error) bool {
 		t.Fatal(err)
 	}
 	return match
+}
+
+func makeSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNS,
+			Name:      "test-secret",
+		},
+		Data: map[string][]byte{
+			"token": []byte("secrettoken"),
+		},
+	}
 }

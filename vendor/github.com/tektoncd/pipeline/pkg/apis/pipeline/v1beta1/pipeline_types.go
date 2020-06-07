@@ -52,6 +52,10 @@ func (p *Pipeline) Copy() PipelineInterface {
 
 // PipelineSpec defines the desired state of Pipeline.
 type PipelineSpec struct {
+	// Description is a user-facing description of the pipeline that may be
+	// used to populate a UI.
+	// +optional
+	Description string `json:"description,omitempty"`
 	// Resources declares the names and types of the resources given to the
 	// Pipeline's tasks as inputs and outputs.
 	Resources []PipelineDeclaredResource `json:"resources,omitempty"`
@@ -131,6 +135,25 @@ func (pt PipelineTask) Deps() []string {
 	for _, cond := range pt.Conditions {
 		for _, rd := range cond.Resources {
 			deps = append(deps, rd.From...)
+		}
+		for _, param := range cond.Params {
+			expressions, ok := GetVarSubstitutionExpressionsForParam(param)
+			if ok {
+				resultRefs := NewResultRefs(expressions)
+				for _, resultRef := range resultRefs {
+					deps = append(deps, resultRef.PipelineTask)
+				}
+			}
+		}
+	}
+	// Add any dependents from task results
+	for _, param := range pt.Params {
+		expressions, ok := GetVarSubstitutionExpressionsForParam(param)
+		if ok {
+			resultRefs := NewResultRefs(expressions)
+			for _, resultRef := range resultRefs {
+				deps = append(deps, resultRef.PipelineTask)
+			}
 		}
 	}
 	return deps

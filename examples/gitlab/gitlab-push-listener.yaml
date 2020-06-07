@@ -1,4 +1,4 @@
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
 metadata:
   name: gitlab-echo-template
@@ -33,7 +33,7 @@ spec:
                   - name: url
                     value: $(params.gitrepositoryurl)
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: gitlab-push-binding
@@ -44,30 +44,21 @@ spec:
     - name: gitrepositoryurl
       value: $(body.repository.git_http_url)
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: gitlab-secret
-type: Opaque
-stringData:
-  gitlabToken: abcde
----
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: EventListener
 metadata:
   name: gitlab-listener
 spec:
-  # from examples/role-resources/servicaccount.yaml
-  serviceAccountName: tekton-triggers-example-sa
+  serviceAccountName: tekton-triggers-gitlab-sa
   triggers:
     - name: gitlab-push-events-trigger
       interceptors:
         - gitlab:
             secretRef:
               secretName: gitlab-secret
-              secretKey: gitlabToken
+              secretKey: secretToken
             eventTypes:
-              - Push Hook # Only push events
+              - Push Hook  # Only push events
       bindings:
         - name: gitlab-push-binding
       template:

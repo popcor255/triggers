@@ -7,7 +7,7 @@
 </p>
 
 Triggers is a Kubernetes
-[Custom Resource Defintion](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
+[Custom Resource Definition](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
 (CRD) controller that allows you to extract information from events payloads (a
 "trigger") to create Kubernetes resources.
 
@@ -15,6 +15,11 @@ The contents of this repo originated from implementing
 [this design](https://docs.google.com/document/d/1fngeNn3kGD4P_FTZjAnfERcEajS7zQhSEUaN7BYIlTw/edit#heading=h.iyqzt1brkg3o)
 (visible to members of
 [the Tekton mailing list](https://github.com/tektoncd/community/blob/master/contact.md#mailing-list)).
+
+* [Background](#background)
+* [Want to start using Triggers?](#want-to-start-using-tekton-triggers)
+* [Want to contribute?](#want-to-contribute)
+* [Project roadmap](roadmap.md)
 
 ## Background
 
@@ -76,6 +81,8 @@ events.
 | Version                                                                                  | Docs                                                                                   | Examples                                                                                | Getting Started                                                                                                                 |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | [HEAD](https://github.com/tektoncd/triggers/blob/master/DEVELOPMENT.md#install-pipeline) | [Docs @ HEAD](https://github.com/tektoncd/triggers/blob/master/docs/README.md)         | [Examples @ HEAD](https://github.com/tektoncd/triggers/blob/master/examples)            | [Getting Started @ HEAD](https://github.com/tektoncd/triggers/blob/master/docs/getting-started#getting-started-with-triggers)   |
+| [v0.5.0](https://github.com/tektoncd/triggers/releases/tag/v0.5.0)                       | [Docs @ v0.5.0](https://github.com/tektoncd/triggers/tree/v0.5.0/docs#tekton-triggers) | [Examples @ v0.5.0](https://github.com/tektoncd/triggers/tree/v0.5.0/examples#examples) | [Getting Started @ v0.5.0](https://github.com/tektoncd/triggers/tree/v0.5.0/docs/getting-started#getting-started-with-triggers) |
+| [v0.4.0](https://github.com/tektoncd/triggers/releases/tag/v0.4.0)                       | [Docs @ v0.4.0](https://github.com/tektoncd/triggers/tree/v0.4.0/docs#tekton-triggers) | [Examples @ v0.4.0](https://github.com/tektoncd/triggers/tree/v0.4.0/examples#examples) | [Getting Started @ v0.4.0](https://github.com/tektoncd/triggers/tree/v0.4.0/docs/getting-started#getting-started-with-triggers) |
 | [v0.3.1](https://github.com/tektoncd/triggers/releases/tag/v0.3.1)                       | [Docs @ v0.3.1](https://github.com/tektoncd/triggers/tree/v0.3.1/docs#tekton-triggers) | [Examples @ v0.3.1](https://github.com/tektoncd/triggers/tree/v0.3.1/examples#examples) | [Getting Started @ v0.3.1](https://github.com/tektoncd/triggers/tree/v0.3.1/docs/getting-started#getting-started-with-triggers) |
 | [v0.3.0](https://github.com/tektoncd/triggers/releases/tag/v0.3.0)                       | [Docs @ v0.3.0](https://github.com/tektoncd/triggers/tree/v0.3.0/docs#tekton-triggers) | [Examples @ v0.3.0](https://github.com/tektoncd/triggers/tree/v0.3.0/examples#examples) | [Getting Started @ v0.3.0](https://github.com/tektoncd/triggers/tree/v0.3.0/docs/getting-started#getting-started-with-triggers) |
 | [v0.2.1](https://github.com/tektoncd/triggers/releases/tag/v0.2.1)                       | [Docs @ v0.2.1](https://github.com/tektoncd/triggers/tree/v0.2.1/docs#tekton-triggers) | [Examples @ v0.2.1](https://github.com/tektoncd/triggers/tree/v0.2.1/examples#examples) | [Getting Started @ v0.2.1](https://github.com/tektoncd/triggers/tree/v0.2.1/docs/getting-started#getting-started-with-triggers) |

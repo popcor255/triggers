@@ -86,12 +86,11 @@ func main() {
 		DiscoveryClient:        sinkClients.DiscoveryClient,
 		DynamicClient:          dynamicCS,
 		TriggersClient:         sinkClients.TriggersClient,
-		PipelineClient:         sinkClients.PipelineClient,
-		ResourceClient:         sinkClients.ResourceClient,
 		HTTPClient:             http.DefaultClient,
 		EventListenerName:      sinkArgs.ElName,
 		EventListenerNamespace: sinkArgs.ElNamespace,
 		Logger:                 logger,
+		Auth:                   sink.DefaultAuthOverride{},
 	}
 
 	// Listen and serve

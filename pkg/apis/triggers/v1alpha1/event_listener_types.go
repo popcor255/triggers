@@ -19,7 +19,8 @@ package v1alpha1
 import (
 	"fmt"
 
-	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1alpha1"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +48,7 @@ type EventListener struct {
 	// +optional
 	Spec EventListenerSpec `json:"spec"`
 	// +optional
-	Status EventListenerStatus `json:"status"`
+	Status EventListenerStatus `json:"status,omitempty"`
 }
 
 // EventListenerSpec defines the desired state of the EventListener, represented
@@ -67,14 +68,24 @@ type EventListenerTrigger struct {
 	// +optional
 	Name         string              `json:"name,omitempty"`
 	Interceptors []*EventInterceptor `json:"interceptors,omitempty"`
+	// ServiceAccount optionally associates credentials with each trigger;
+	// more granular authorization for
+	// who is allowed to utilize the associated pipeline
+	// vs. defaulting to whatever permissions are associated
+	// with the entire EventListener and associated sink facilitates
+	// multi-tenant model based scenarios
+	// TODO do we want to restrict this to the event listener namespace and just ask for the service account name here?
+	// +optional
+	ServiceAccount *corev1.ObjectReference `json:"serviceAccount,omitempty"`
 }
 
 // EventInterceptor provides a hook to intercept and pre-process events
 type EventInterceptor struct {
-	Webhook *WebhookInterceptor `json:"webhook,omitempty"`
-	GitHub  *GitHubInterceptor  `json:"github,omitempty"`
-	GitLab  *GitLabInterceptor  `json:"gitlab,omitempty"`
-	CEL     *CELInterceptor     `json:"cel,omitempty"`
+	Webhook   *WebhookInterceptor   `json:"webhook,omitempty"`
+	GitHub    *GitHubInterceptor    `json:"github,omitempty"`
+	GitLab    *GitLabInterceptor    `json:"gitlab,omitempty"`
+	CEL       *CELInterceptor       `json:"cel,omitempty"`
+	Bitbucket *BitBucketInterceptor `json:"bitbucket,omitempty"`
 }
 
 // WebhookInterceptor provides a webhook to intercept and pre-process events
@@ -86,7 +97,13 @@ type WebhookInterceptor struct {
 	// Header is a group of key-value pairs that can be appended to the
 	// interceptor request headers. This allows the interceptor to make
 	// decisions specific to an EventListenerTrigger.
-	Header []pipelinev1.Param `json:"header,omitempty"`
+	Header []v1beta1.Param `json:"header,omitempty"`
+}
+
+// BitBucketInterceptor provides a webhook to intercept and pre-process events
+type BitBucketInterceptor struct {
+	SecretRef  *SecretRef `json:"secretRef,omitempty"`
+	EventTypes []string   `json:"eventTypes,omitempty"`
 }
 
 // GitHubInterceptor provides a webhook to intercept and pre-process events
@@ -124,9 +141,11 @@ type SecretRef struct {
 
 // EventListenerBinding refers to a particular TriggerBinding or ClusterTriggerBindingresource.
 type EventListenerBinding struct {
-	Name       string             `json:"name"`
-	Kind       TriggerBindingKind `json:"kind"`
-	APIVersion string             `json:"apiversion,omitempty"`
+	Name       string              `json:"name,omitempty"`
+	Kind       TriggerBindingKind  `json:"kind,omitempty"`
+	Ref        string              `json:"ref,omitempty"`
+	Spec       *TriggerBindingSpec `json:"spec,omitempty"`
+	APIVersion string              `json:"apiversion,omitempty"`
 }
 
 // EventListenerTemplate refers to a particular TriggerTemplate resource.

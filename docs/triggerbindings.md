@@ -1,3 +1,9 @@
+<!--
+---
+linkTitle: "Trigger Bindings"
+weight: 4
+---
+-->
 # TriggerBindings
 
 As per the name, `TriggerBinding`s bind against events/triggers.
@@ -6,9 +12,8 @@ parameters. The separation of `TriggerBinding`s from `TriggerTemplate`s was
 deliberate to encourage reuse between them.
 
 <!-- FILE: examples/triggerbindings/triggerbinding.yaml -->
-
 ```YAML
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: pipeline-binding
@@ -21,6 +26,7 @@ spec:
   - name: contenttype
     value: $(header.Content-Type)
 ```
+
 
 `TriggerBinding`s are connected to `TriggerTemplate`s within an
 [`EventListener`](eventlisteners.md), which is where the pod is actually
@@ -57,6 +63,15 @@ innermost `$()` as the JSONPath expression
 ```shell script
 $($(body.b)) -> $(body.b)
 $($($(body.b))) -> $(body.b)
+```
+
+#### Keys with dots `.`
+
+To access JSON keys that contain `.` character, we need to escape the `.` e.g.
+
+```shell script
+# body contains a filed called "tekton.dev" e.g. {"body": {"tekton.dev": "triggers"}}
+$(body.tekton\.dev) -> "triggers"
 ```
 
 ### Examples
@@ -99,7 +114,7 @@ that extracts event information, and another binding that provides deploy
 environment information:
 
 ```yaml
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: event-binding
@@ -110,7 +125,7 @@ spec:
     - name: gitrepositoryurl
       value: $(body.repository.url)
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: prod-env
@@ -119,7 +134,7 @@ spec:
     - name: environment
       value: prod
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: staging-env
@@ -128,7 +143,7 @@ spec:
     - name: environment
       value: staging
 ---
-apiVersion: tekton.dev/v1alpha1
+apiVersion: triggers.tekton.dev/v1alpha1
 kind: EventListener
 metadata:
   name: listener

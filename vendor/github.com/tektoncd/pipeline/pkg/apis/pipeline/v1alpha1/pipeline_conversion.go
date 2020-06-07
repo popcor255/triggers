@@ -42,6 +42,7 @@ func (source *PipelineSpec) ConvertUp(ctx context.Context, sink *v1beta1.Pipelin
 	sink.Resources = source.Resources
 	sink.Params = source.Params
 	sink.Workspaces = source.Workspaces
+	sink.Description = source.Description
 	if len(source.Tasks) > 0 {
 		sink.Tasks = make([]v1beta1.PipelineTask, len(source.Tasks))
 		for i := range source.Tasks {
@@ -68,6 +69,7 @@ func (source *PipelineTask) ConvertUp(ctx context.Context, sink *v1beta1.Pipelin
 	sink.Resources = source.Resources
 	sink.Params = source.Params
 	sink.Workspaces = source.Workspaces
+	sink.Timeout = source.Timeout
 	return nil
 }
 
@@ -86,6 +88,7 @@ func (sink *PipelineSpec) ConvertDown(ctx context.Context, source v1beta1.Pipeli
 	sink.Resources = source.Resources
 	sink.Params = source.Params
 	sink.Workspaces = source.Workspaces
+	sink.Description = source.Description
 	if len(source.Tasks) > 0 {
 		sink.Tasks = make([]PipelineTask, len(source.Tasks))
 		for i := range source.Tasks {
@@ -112,5 +115,6 @@ func (sink *PipelineTask) ConvertDown(ctx context.Context, source v1beta1.Pipeli
 	sink.Resources = source.Resources
 	sink.Params = source.Params
 	sink.Workspaces = source.Workspaces
+	sink.Timeout = source.Timeout
 	return nil
 }

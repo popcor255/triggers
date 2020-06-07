@@ -1,3 +1,9 @@
+<!--
+---
+linkTitle: "CEL Expression Extensions"
+weight: 8
+---
+-->
 # CEL expression extensions
 
 The CEL expression is configured to expose parts of the request, and some custom
@@ -6,6 +12,21 @@ functions to make matching easier.
 In addition to the custom function extension listed below, you can craft any
 valid CEL expression as defined by the
 [cel-spec language definition](https://github.com/google/cel-spec/blob/master/doc/langdef.md)
+
+## String functions
+
+The [upstream CEL implementation](https://github.com/google/cel-go/) provides
+extensions to the CEL specification for manipulating strings.
+
+For example:
+
+```javascript
+'refs/heads/master'.split('/') // result = list ['refs', 'heads', 'master']
+'my place'.replace('my ',' ') // result = string 'place'
+'this that another'.replace('th ',' ', 2) // result = 'is at another'
+```
+
+The `replace` overload allows an optional limit on replacements.
 
 ## Notes on numbers in CEL expressions
 
@@ -23,7 +44,7 @@ For example:
 }
 ```
 
-In the JSON above, both numbers are parsed as floating point values.
+In the JSON above, both numbers are parsed as CEL double (Go float64) values.
 
 This means that if you want to do integer arithmetic, you'll need to
 [use explicit conversion functions](https://github.com/google/cel-spec/blob/master/doc/langdef.md#numeric-values).
@@ -72,6 +93,11 @@ interceptors:
 **bad_measure_times_3** will fail with
 `failed to evaluate overlay expression 'body.measure * 3': no such overload`
 because there's no automatic conversion.
+
+## cel-go extensions
+
+All the functionality from the cel-go project's [String extension](https://github.com/google/cel-go/tree/master/ext) is available in
+your CEL expressions.
 
 ## List of extensions
 
@@ -142,7 +168,7 @@ interceptor.
       match
     </th>
     <td>
-      header.(string, string) -> bool
+      header.match(string, string) -> bool
     </td>
     <td>
       Uses the canonical header matching from Go's http.Request to match the header against the value.
@@ -151,39 +177,12 @@ interceptor.
      <pre>header.match('x-test', 'test-value')</pre>
     </td>
   </tr>
-  <tr>
-    <th>
-      truncate
-    </th>
-    <td>
-      (string, uint) -> string
-    </td>
-    <td>
-      Truncates a string to no more than the specified length.
-    </td>
-    <td>
-     <pre>truncate(body.commit.sha, 5)</pre>
-    </td>
-  </tr>
-  <tr>
-    <th>
-      split
-    </th>
-    <td>
-      (string, string) -> string(dyn)
-    </td>
-    <td>
-      Splits a string on the provided separator value.
-    </td>
-    <td>
-     <pre>split(body.ref, '/')</pre>
-    </td>
   </tr>
     <th>
       canonical
     </th>
     <td>
-      header.(string) -> string
+      header.canonical(string) -> string
     </td>
     <td>
       Uses the canonical header matching from Go's http.Request to get the provided header name.
@@ -194,16 +193,118 @@ interceptor.
   </tr>
   <tr>
     <th>
+      truncate
+    </th>
+    <td>
+      <pre>&lt;string&gt;.truncate(uint) -> string</pre>
+    </td>
+    <td>
+      Truncates a string to no more than the specified length.
+    </td>
+    <td>
+     <pre>body.commit.sha.truncate(5)</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
+      split
+    </th>
+    <td>
+      <pre>&lt;string&gt;.split(string) -> string(dyn)</pre>
+    </td>
+    <td>
+      Splits a string on the provided separator value.
+    </td>
+    <td>
+     <pre>body.ref.split('/')</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
       decodeb64
     </th>
     <td>
-      (string) -> string
+      <pre>&lt;string&gt;.decodeb64() -> string</pre>
     </td>
     <td>
       Decodes a base64 encoded string.
     </td>
     <td>
-     <pre>decodeb64(body.message.data)</pre>
+     <pre>body.message.data.decodeb64()</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
+     compareSecret
+    </th>
+    <td>
+      <pre>&lt;string&gt;.compareSecret(string, string, string) -> bool</pre>
+    </td>
+    <td>
+      Constant-time comparison of strings against secrets, this will fetch the secret using the combination of namespace/name and compare the token key to the string using a cryptographic constant-time comparison..<p>
+      The event-listener service account must have access to the secret.
+    </td>
+    <td>
+     <pre>header.canonical('X-Secret-Token').compareSecret('', 'secret-name', 'namespace')</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
+     compareSecret
+    </th>
+    <td>
+      <pre>&lt;string&gt;.compareSecret(string, string) -> bool</pre>
+    </td>
+    <td>
+     This is almost identical to the version above, but only requires two arguments, the namespace is assumed to be the namespace for the event-listener.
+    </td>
+    <td>
+     <pre>header.canonical('X-Secret-Token').compareSecret('key', 'secret-name')</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
+     parseJSON()
+    </th>
+    <td>
+     <pre>&lt;string&gt;.parseJSON() -> map&lt;string, dyn&gt;</pre>
+    </td>
+    <td>
+     This parses a string that contains a JSON body into a map which which can be subsequently used in other expressions.
+    </td>
+    <td>
+     <pre>'{"testing":"value"}'.parseJSON().testing == "value"</pre>
+    </td>
+  </tr>
+  <tr>
+    <th>
+     parseURL()
+    </th>
+    <td>
+     <pre>&lt;string&gt;.parseURL() -> map&lt;string, dyn&gt;</pre>
+    </td>
+    <td>
+     This parses a string that contains a URL into a map with keys for the elements of the URL.<br />
+     The resulting map will contain the following keys for this URL "https://user:pass@example.com/test/path?s=testing#first"<br />
+     <table>
+      <tr><th>Field</th><th>Example</th>
+      <tr><td>scheme</td><td>https</td></tr>
+      <tr><td>host</td><td>example.com</td></tr>
+      <tr><td>path</td><td>/test/path</td></tr>
+      <tr><td>rawQuery</td><td>s=testing</td></tr>
+      <tr><td>fragment</td><td>first</td></tr>
+      <tr><td>query</td><td>{"s": "testing"}</td></tr>
+      <tr><td>queryStrings</td><td>{"s": ["testing"]}</td></tr>
+      <tr><td>auth</td><td>{"username": "user", "password": "pass"}</td></tr>
+     </table>
+     Note the difference between <b>query</b> and <b>queryStrings</b>, in
+<b>query</b>, multiple query params with the same name would be comma separated, for
+the case where a single string is provided, this will just be the single string
+value.  For <b>queryString</b> the query param values are provided as a list,
+which can be accessed by indexing.
+    </td>
+    <td>
+     <pre>'https://example.com/test?query=testing'.parseURL().query['query'] == "testing"</pre>
     </td>
   </tr>
 </table>
